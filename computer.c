@@ -206,9 +206,14 @@ void Decode ( unsigned int instr, DecodedInstr* d, RegVals* rVals) {
             if(mips.debugging)
                 printf("decode func %d", d->regs.r.funct);
             d->regs.r.shamt = (instr & 0b11111000000) >> 6;
+            // set the registers
             d->regs.r.rd = (instr & 0b1111100000000000) >> 11;
             d->regs.r.rt = (instr & 0b111110000000000000000) >> 16;
             d->regs.r.rs = (instr & 0b11111000000000000000000000) >> 21;
+            // set the register values
+            rVals->R_rs = mips.registers[d->regs.r.rs];
+            rVals->R_rt = mips.registers[d->regs.r.rt];
+            rVals->R_rt = mips.registers[d->regs.r.rd];
             
             break;
 
@@ -233,9 +238,13 @@ void Decode ( unsigned int instr, DecodedInstr* d, RegVals* rVals) {
                 printf("I Format\n");
 
             d->type = I;
-            d->regs.i.addr_or_immed = (short)instr & 0b1111111111111111;    // short for 16bit int
+            d->regs.i.addr_or_immed = (short)(instr & 0b1111111111111111);    // short for 16bit int
+            // set the registers
             d->regs.i.rt = (instr & 0b111110000000000000000) >> 16;
             d->regs.i.rs = (instr & 0b11111000000000000000000000) >> 21;
+            // set the register values
+            rVals->R_rs = mips.registers[d->regs.i.rs];
+            rVals->R_rt = mips.registers[d->regs.i.rt];
 
             break;
     }
@@ -258,77 +267,117 @@ void PrintInstruction (DecodedInstr* d) {
         
         // R-type: look at func
         case 0:
-            switch(d->regs.r.funct){
-                case 32:    //0x20 = 32
+            switch((funct)(d->regs.r.funct)){
+                case add:    //0x20 = 32
                     instr = "add";  break;
-                case 33:    //0x21 = 33
+                case addu:    //0x21 = 33
                     if(mips.debugging)
                         printf("addu func %d\n", d->regs.r.funct);
                     instr = "addu"; break;
-                case 36:    //0x24 = 36
+                case and:    //0x24 = 36
                     instr = "and"; break;
-                case 8:
+                case jr:
                     if(mips.debugging)
                         printf("hello");
-                    instr = "jr"; break;
-                case 27:
+                    instr = "jr";
+                    printf("%s\t$%d\n", instr, d->regs.r.rs);
+                    break;
+                case or:
                     instr = "or"; break;
-                case 42:    // 0x2a = 42
+                case slt:    // 0x2a = 42
                     instr = "slt"; break;
-                case 43:
-                    instr = "sltu"; break;
-                case 0:
+                // case sltu:
+                //     instr = "sltu"; break;
+                case sll:
                     instr = "sll"; break;
-                case 2:
+                case srl:
                     instr = "srl"; break;
-                case 34:
+                case sub:
                     instr = "sub"; break;
-                case 35:
+                case subu:
                     instr = "subu"; break;
                 default:
                     printf("Uknown Instruction R-type case: %d\n", d->regs.r.funct);
                     exit(1);
             } 
         break;
-        case 9:
+        case addi:
+            instr = "addi"; break;
+        case addiu:
             instr = "addiu"; break;
-        case 12:
+        case andi:
             instr = "andi"; break;
-        case 4:
+        case beq:
             instr = "beq"; break;
-        case 5:
+        case bne:
             instr = "bne"; break;
-        case 2:
+        case j:
             instr = "j"; break;
-        case 3:
+        case jal:
             instr = "jal"; break;
-        case 15:
+        case lui:
             instr = "lui"; break;
-        case 35:
+        case lw:
             instr = "lw"; break;
-        case 13:
+        case ori:
             instr = "ori"; break;
-        case 10:
+        case slti:
             instr = "slti"; break;
-        case 11:
-            instr = "sltiu"; break;
-        case 43:
+        // case sltiu:
+        //    instr = "sltiu"; break;
+        case sw:
             instr = "sw"; break;
         default:
             printf("Uknown instruction %d", d->op);
             exit(1);
     }
 
+    // union allows us to use d->regs.r.rd/s/t even for i format
+    int rs = d->regs.r.rs;
+    int rt = d->regs.r.rt;
+    int rd = d->regs.r.rd;
+    short imm = d->regs.i.addr_or_immed; // short for 16bit int
+
     switch(d->type){
         case R:
-            printf("%s\t$%d, $%d, $%d\n", instr, d->regs.r.rd, d->regs.r.rs, d->regs.r.rt);
+            if(mips.debugging)
+                printf("prnt R Format\n");
+            // Print format based on funct
+            switch((funct)(d->regs.r.funct)){
+                case jr:
+                    printf("%s\t$%d\n", instr, rs); break;
+                case srl:
+                case sll:
+                    printf("%s\t$%d, $%d, %d\n", instr, rd, rt, d->regs.r.shamt);   break;
+                default:
+                    printf("%s\t$%d, $%d, $%d\n", instr, rd, rs, rt); break;
+            }
             break;
         case I:
-            printf("%s\t\n", instr);
+            if(mips.debugging)
+                printf("prnt I format\n");
+            // Print format based on opcode
+            switch((opcode)(d->op)){
+                // Print an address
+                case beq:
+                case bne:
+                    if(mips.debugging)
+                        printf("branching\n");
+                    // always relative to next instruction (mips.pc + 4)
+                    // word align the imm by multiplying it by 4 (shift by 2 to left)
+                    printf("%s\t$%d, $%d, 0x%x\n", instr, rt, rs, mips.pc + 4 + (imm << 2)); break;
+                // Print an immediate
+                case addiu:
+                    if(mips.debugging)
+                        printf("print imm not addre\n");
+                    printf("%s\t$%d, $%d, %i\n", instr, rt, rs, imm);   break;
+                default:
+                    printf("Oops Uknown opcode to print");
+                
+            }
             break;
         case J:
-            printf("%s\t\n", instr);
-            break;
+            printf("%s\t%x\n", instr, d->regs.j.target);
     }
 
     
