@@ -75,9 +75,9 @@ void Simulate () {
     
     /* Initialize the PC to the start of the code section */
     mips.pc = 0x00400000;
-    //while (1) {
-    int x = 0;
-    while(++x < 10){
+    while (1) {
+    //int x = 0;
+    //while(++x < 10){
         if (mips.interactive) {
             printf ("> ");
             fgets (s,sizeof(s),stdin);
@@ -106,7 +106,7 @@ void Simulate () {
 	 */
         val = Execute(&d, &rVals);
 
-	UpdatePC(&d,val);
+	    UpdatePC(&d,val);
 
         /* 
 	 * Perform memory load or store. Place the
@@ -192,15 +192,14 @@ void Decode ( unsigned int instr, DecodedInstr* d, RegVals* rVals) {
     if(mips.debugging)
         printf("opcode %d\n", d->op);
     
-    // opcode: 0 = R, I = 1, J = 2
+    // opcode: 0 = R, 2/3 = J, rest is I
     switch(d->op){
         // R-format always 0 opcode
+        // opcode   rs      rt      rd      shamt   func
+        // 31-26    25-21   20-16   15-11   10-6    6-0
         case 0:
             if(mips.debugging)
                 printf("R Format\n");
-
-            // opcode   rs      rt      rd      shamt   func
-            // 31-26    25-21   20-16   15-11   10-6    6-0
             d->type = R;
             d->regs.r.funct = instr & 0b111111;
             if(mips.debugging)
@@ -218,12 +217,12 @@ void Decode ( unsigned int instr, DecodedInstr* d, RegVals* rVals) {
             break;
 
         // J-format
+        // opcode   address
+        // 31-26    26-0
         case 2:
             // j
         case 3:
             // jal
-            // opcode   address
-            // 31-26    26-0
             if(mips.debugging)
                 printf("J Format\n");
             d->type = J;
@@ -280,7 +279,7 @@ void PrintInstruction (DecodedInstr* d) {
                     if(mips.debugging)
                         printf("hello");
                     instr = "jr";
-                    printf("%s\t$%d\n", instr, d->regs.r.rs);
+                    //printf("%s\t$%d\n", instr, d->regs.r.rs);
                     break;
                 case or:
                     instr = "or"; break;
@@ -297,12 +296,14 @@ void PrintInstruction (DecodedInstr* d) {
                 case subu:
                     instr = "subu"; break;
                 default:
-                    printf("Uknown Instruction R-type case: %d\n", d->regs.r.funct);
+                    if(mips.debugging)
+                        printf("Uknown Instruction R-type case: %d\n", d->regs.r.funct);
                     exit(1);
             } 
-        break;
-        case addi:
-            instr = "addi"; break;
+            break;
+        // case addi:
+        //    printf("Oops");
+        //    instr = "addi"; break;
         case addiu:
             instr = "addiu"; break;
         case andi:
@@ -328,7 +329,8 @@ void PrintInstruction (DecodedInstr* d) {
         case sw:
             instr = "sw"; break;
         default:
-            printf("Uknown instruction %d", d->op);
+            if(mips.debugging)
+                printf("Uknown instruction %d\n", d->op);
             exit(1);
     }
 
@@ -344,18 +346,21 @@ void PrintInstruction (DecodedInstr* d) {
                 printf("prnt R Format\n");
             // Print format based on funct
             switch((funct)(d->regs.r.funct)){
+                // jr   $rs
                 case jr:
                     printf("%s\t$%d\n", instr, rs); break;
+                // srl/sll  $rd, $rs, shmat
                 case srl:
                 case sll:
                     printf("%s\t$%d, $%d, %d\n", instr, rd, rt, d->regs.r.shamt);   break;
+                // and/etc  $rd, $rs, $rt
                 default:
                     printf("%s\t$%d, $%d, $%d\n", instr, rd, rs, rt); break;
             }
             break;
         case I:
             if(mips.debugging)
-                printf("prnt I format\n");
+                printf("print I format\n");
             // Print format based on opcode
             switch((opcode)(d->op)){
                 // Print an address
@@ -365,28 +370,107 @@ void PrintInstruction (DecodedInstr* d) {
                         printf("branching\n");
                     // always relative to next instruction (mips.pc + 4)
                     // word align the imm by multiplying it by 4 (shift by 2 to left)
-                    printf("%s\t$%d, $%d, 0x%x\n", instr, rt, rs, mips.pc + 4 + (imm << 2)); break;
-                // Print an immediate
+                    printf("%s\t$%d, $%d, 0x%8.8x\n", instr, rt, rs, mips.pc + 4 + (imm << 2)); break;
+                // Print immediate in decimal
                 case addiu:
                     if(mips.debugging)
                         printf("print imm not addre\n");
                     printf("%s\t$%d, $%d, %i\n", instr, rt, rs, imm);   break;
+                // lw/sw $rt, imm($rs)
+                case lw:
+                case sw:
+                    printf("%s\t$%d, %d($%d)\n", instr, rt, imm, rs); break;
+                // Print immediate in hex
+                // immediate is zero extended
+                case andi:
+                case ori:
+                case lui:
+                    switch(imm){
+                        // Print 0x0 if imm is 0
+                        case 0:
+                            printf("%s\t$%d, $%d, 0x%x\n", instr, rt, rs, imm); break;
+                        // Otherwise print in hex
+                        default:
+                            printf("%s\t$%d, $%d, 0x%4.4x\n", instr, rt, rs, (unsigned short)(imm)); break;
+                    } break;
                 default:
-                    printf("Oops Uknown opcode to print");
-                
+                    if(mips.debugging)
+                        printf("Oops Uknown opcode to print\n");
+                    exit(1);
             }
             break;
         case J:
-            printf("%s\t%x\n", instr, d->regs.j.target);
+            // to get the address, concatenate the first four bits of PC
+            // to the left of our jump address shifted 2 to the left
+            printf("%s\t0x%8.8x\n", instr, (mips.pc & 0xf0000000) | (d->regs.j.target << 2)); break;
+        default:
+            if(mips.debugging)
+                printf("Oops unknown type\n");
+            exit(1);
     }
-
-    
-    
 }
 
 /* Perform computation needed to execute d, returning computed value */
+/* Reference green sheet */
 int Execute ( DecodedInstr* d, RegVals* rVals) {
     /* Your code goes here */
+    // Find instruction
+
+    unsigned short imm = d->regs.i.addr_or_immed;
+
+    switch((opcode)(d->op)){
+        // R format: look at funct
+        case 0:
+            switch((funct)(d->regs.r.funct)){
+                case jr:
+                    return rVals->R_rs;
+                case srl:
+                    return rVals->R_rt >> d->regs.r.shamt;
+                case sll:
+                    return rVals->R_rt << d->regs.r.shamt;
+                case addu:
+                    return rVals->R_rs + rVals->R_rt;
+                case subu:
+                    return rVals->R_rs - rVals->R_rt;
+                case and:
+                    return rVals->R_rs & rVals->R_rt;
+                case or:
+                    return rVals->R_rs || rVals->R_rt;
+                case slt:
+                    return rVals->R_rs < rVals->R_rt;
+                default:
+                    if(mips.debugging)
+                        printf("Oops Execute Unknown funct\n"); 
+                    exit(1);
+            } break;
+        // I format
+        case addiu:
+            return rVals->R_rs + d->regs.i.addr_or_immed;
+        case beq:
+            return rVals->R_rs == rVals->R_rt;
+        case bne:
+            return rVals->R_rs != rVals->R_rt;
+        case lw:
+        case sw:
+            return rVals->R_rs + d->regs.i.addr_or_immed;
+        case andi:
+            return rVals->R_rs & imm;
+        case ori:
+            return rVals->R_rs || imm;
+        // load the immediate into the upper 16 bits by shifting it 16 left  
+        case lui:
+            return imm << 16;
+        // J format
+        case jal:
+            return mips.pc + 4;
+        // no need for calculations
+        case j:
+            return;
+        default:
+            if(mips.debugging)
+                printf("Oops Execute Unknown opcode\n");
+            exit(1);
+    }
   return 0;
 }
 
@@ -396,8 +480,36 @@ int Execute ( DecodedInstr* d, RegVals* rVals) {
  * increments by 4 (which we have provided).
  */
 void UpdatePC ( DecodedInstr* d, int val) {
-    mips.pc+=4;
-    /* Your code goes here */
+    switch((opcode)(d->op)){
+        // R format: look at funct
+        case 0:
+            switch((funct)(d->regs.r.funct)){
+                case jr:
+                    mips.pc = val; return;
+                default:
+                    mips.pc+=4; return;
+            }
+            break;
+        // I format
+        case beq:
+        case bne:
+            if(val){
+                // always relative to next instruction (mips.pc + 4)
+                // word align the imm by multiplying it by 4 (shift by 2 to left)
+                mips.pc = mips.pc + 4 + ((short)(d->regs.i.addr_or_immed) << 2);  // short for 16bit
+                return;
+            }
+        // J format
+        case j:
+        case jal:
+            // to get the address, concatenate the first four bits of PC
+            // to the left of our jump address shifted 2 to the left
+            mips.pc = (mips.pc & 0xf0000000) | (d->regs.j.target << 2);
+            return;
+        default:
+            mips.pc += 4;
+            return;
+    }
 }
 
 /*
