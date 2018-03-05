@@ -212,7 +212,7 @@ void Decode ( unsigned int instr, DecodedInstr* d, RegVals* rVals) {
             // set the register values
             rVals->R_rs = mips.registers[d->regs.r.rs];
             rVals->R_rt = mips.registers[d->regs.r.rt];
-            rVals->R_rt = mips.registers[d->regs.r.rd];
+            rVals->R_rd = mips.registers[d->regs.r.rd];
             
             break;
 
@@ -370,7 +370,7 @@ void PrintInstruction (DecodedInstr* d) {
                         printf("branching\n");
                     // always relative to next instruction (mips.pc + 4)
                     // word align the imm by multiplying it by 4 (shift by 2 to left)
-                    printf("%s\t$%d, $%d, 0x%8.8x\n", instr, rt, rs, mips.pc + 4 + (imm << 2)); break;
+                    printf("%s\t$%d, $%d, 0x%8.8x\n", instr, rs, rt, mips.pc + 4 + (imm << 2)); break;
                 // Print immediate in decimal
                 case addiu:
                     if(mips.debugging)
@@ -429,6 +429,8 @@ int Execute ( DecodedInstr* d, RegVals* rVals) {
                 case sll:
                     return rVals->R_rt << d->regs.r.shamt;
                 case addu:
+                    if(mips.debugging)
+                        printf("rs: %d\trt: %d\n", rVals->R_rs, rVals->R_rt);
                     return rVals->R_rs + rVals->R_rt;
                 case subu:
                     return rVals->R_rs - rVals->R_rt;
@@ -499,6 +501,9 @@ void UpdatePC ( DecodedInstr* d, int val) {
                 mips.pc = mips.pc + 4 + ((short)(d->regs.i.addr_or_immed) << 2);  // short for 16bit
                 return;
             }
+            else{
+                mips.pc += 4; return;
+            }
         // J format
         case j:
         case jal:
@@ -552,6 +557,10 @@ int Mem( DecodedInstr* d, int val, int *changedMem) {
  * otherwise put -1 in *changedReg.
  */
 void RegWrite( DecodedInstr* d, int val, int *changedReg) {
+    if(mips.debugging){
+        printf("RegWrite val: %d", val);
+    }
+
     // default don't change register
     *changedReg = -1;
 
@@ -570,8 +579,10 @@ void RegWrite( DecodedInstr* d, int val, int *changedReg) {
                     *changedReg = d->regs.r.rd;
                     mips.registers[d->regs.r.rd] = val;
                     return;
-                default:
-                    exit(1);
+                // added default to get rid of warning prints
+                // but caused program to terminate before printInfo
+                 default:
+                     return;
             }
         // I format
         case addiu:
