@@ -534,7 +534,7 @@ int Mem( DecodedInstr* d, int val, int *changedMem) {
     // so access mips.memory[(val - 0x00400000) >> 2]
 
     // default don't change mem
-    changedMem = -1;
+    *changedMem = -1;
 
     switch((opcode)(d->op)){
         case lw:
@@ -546,8 +546,10 @@ int Mem( DecodedInstr* d, int val, int *changedMem) {
             *changedMem = val;
             // store the value at rt into mem
             mips.memory[(val - 0x00400000) >> 2] = mips.registers[d->regs.i.rt];
+        default:
+            return val;
     }
-    return val;
+    // return val;
 }
 
 /* 
@@ -599,6 +601,8 @@ void RegWrite( DecodedInstr* d, int val, int *changedReg) {
             // $ra is reg 31
             *changedReg = 31;
             mips.registers[31] = val;
+            return;
+        default:
             return;
     }
 }
