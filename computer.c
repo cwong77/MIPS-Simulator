@@ -523,8 +523,26 @@ void UpdatePC ( DecodedInstr* d, int val) {
  *
  */
 int Mem( DecodedInstr* d, int val, int *changedMem) {
-    /* Your code goes here */
-  return 0;
+    // val is the mem address to access
+    // if val is 0x00400000, then we want to access mips.memory[0]
+    // divide by 4 (shift right 2) since data is stored in bytes
+    // so access mips.memory[(val - 0x00400000) >> 2]
+
+    // default don't change mem
+    changedMem = -1;
+
+    switch((opcode)(d->op)){
+        case lw:
+            // mips.registers[d->regs.i.rt] = mips.memory[(val - 0x00400000) >> 2]; mem stage, don't edit reg values here
+            // just return the value read from memory
+            return mips.memory[(val - 0x00400000) >> 2];
+        case sw:
+            // place the address of any updated memory in *changedMem
+            *changedMem = val;
+            // store the value at rt into mem
+            mips.memory[(val - 0x00400000) >> 2] = mips.registers[d->regs.i.rt];
+    }
+    return val;
 }
 
 /* 
@@ -534,5 +552,42 @@ int Mem( DecodedInstr* d, int val, int *changedMem) {
  * otherwise put -1 in *changedReg.
  */
 void RegWrite( DecodedInstr* d, int val, int *changedReg) {
-    /* Your code goes here */
+    // default don't change register
+    *changedReg = -1;
+
+    switch((opcode)d->op){
+        // R format
+        case 0:
+            switch((funct)d->regs.r.funct){
+                case addu:
+                case and:
+                case or:
+                case slt:
+                case sll:
+                case srl:
+                case subu:
+                    // rd is always modified in R format
+                    *changedReg = d->regs.r.rd;
+                    mips.registers[d->regs.r.rd] = val;
+                    return;
+                default:
+                    exit(1);
+            }
+        // I format
+        case addiu:
+        case andi:
+        case lui:
+        case lw:
+        case ori:
+            // rt is always in I format
+            *changedReg = d->regs.i.rt;
+            mips.registers[d->regs.i.rt] = val;
+            return;
+        // J format
+        case jal:
+            // $ra is reg 31
+            *changedReg = 31;
+            mips.registers[31] = val;
+            return;
+    }
 }
